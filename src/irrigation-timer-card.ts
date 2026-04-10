@@ -148,17 +148,18 @@ export class IrrigationTimerCard extends LitElement {
   }
 
   /**
-   * Send a command to the Tuya device via Xtend Tuya's call_api service.
-   * Uses the same Tuya cloud API that the integration itself uses.
+   * Send a timer command to the Tuya device.
+   * Calls script.tuya_set_timer which handles Tuya API auth.
+   * Script must be configured in HA's scripts.yaml.
    */
   private async _sendTimerCommand(encoded: string): Promise<void> {
-    await this.hass.callService("xtend_tuya", "call_api", {
-      source: this._config.tuya_account,
-      method: "POST",
-      url: `/v1.0/devices/${this._config.device_id}/commands`,
-      payload: JSON.stringify({
-        commands: [{ code: "time_task", value: encoded }],
-      }),
+    await this.hass.callService("script", "turn_on", {
+      entity_id: "script.tuya_set_timer",
+      variables: {
+        device_id: this._config.device_id,
+        code: "time_task",
+        value: encoded,
+      },
     });
   }
 

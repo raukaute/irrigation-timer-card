@@ -29,8 +29,6 @@ export interface IrrigationTimerCardConfig {
   slot_entity?: string;
   /** Tuya device ID for sending commands */
   device_id?: string;
-  /** Tuya account name (e.g. "solar-valves@mavronero.cy") for call_api */
-  tuya_account?: string;
   /** Name override */
   name?: string;
 }
