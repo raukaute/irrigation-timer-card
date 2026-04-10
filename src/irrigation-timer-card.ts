@@ -147,17 +147,25 @@ export class IrrigationTimerCard extends LitElement {
     };
   }
 
+  /**
+   * Send a command to the Tuya device via Xtend Tuya's call_api service.
+   * Uses the same Tuya cloud API that the integration itself uses.
+   */
+  private async _sendTimerCommand(encoded: string): Promise<void> {
+    await this.hass.callService("xtend_tuya", "call_api", {
+      source: this._config.tuya_account,
+      method: "POST",
+      url: `/v1.0/devices/${this._config.device_id}/commands`,
+      payload: JSON.stringify({
+        commands: [{ code: "time_task", value: encoded }],
+      }),
+    });
+  }
+
   private async _saveTimer(): Promise<void> {
     if (!this._editing) return;
     const encoded = encodeTimerSlot(this._editing);
-
-    // Call HA service to write the DP
-    // This requires a custom service or script on HA that writes to the Tuya DP
-    await this.hass.callService("xtend_tuya", "send_command", {
-      device_id: this._config.device_id,
-      code: "time_task",
-      value: encoded,
-    });
+    await this._sendTimerCommand(encoded);
 
     this._timers = new Map(this._timers);
     this._timers.set(this._editing.slot, { ...this._editing });
@@ -167,12 +175,7 @@ export class IrrigationTimerCard extends LitElement {
 
   private async _deleteTimer(slot: number): Promise<void> {
     const encoded = encodeTimerDelete(slot);
-
-    await this.hass.callService("xtend_tuya", "send_command", {
-      device_id: this._config.device_id,
-      code: "time_task",
-      value: encoded,
-    });
+    await this._sendTimerCommand(encoded);
 
     this._timers = new Map(this._timers);
     this._timers.delete(slot);
@@ -266,12 +269,7 @@ export class IrrigationTimerCard extends LitElement {
     const checked = (e.target as HTMLInputElement).checked;
     const updated = { ...timer, enabled: checked };
     const encoded = encodeTimerSlot(updated);
-
-    await this.hass.callService("xtend_tuya", "send_command", {
-      device_id: this._config.device_id,
-      code: "time_task",
-      value: encoded,
-    });
+    await this._sendTimerCommand(encoded);
 
     this._timers = new Map(this._timers);
     this._timers.set(timer.slot, updated);
