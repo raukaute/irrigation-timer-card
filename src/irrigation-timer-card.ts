@@ -59,29 +59,20 @@ export class IrrigationTimerCard extends LitElement {
     const entity = this.hass.states[this._config.entity];
     if (!entity) return;
 
-    // The summary sensor state contains the last-updated timer info.
-    // We parse it to update our cache.
-    // Format: "Slot N: HH:MM Xmin/XL days [ON/OFF]"
-    // For a more robust approach, we'd read raw attributes.
-    // For now, we rely on the slot_entity for the slot index.
-    const slotEntity = this._config.slot_entity
-      ? this.hass.states[this._config.slot_entity]
-      : null;
+    const state = entity.state;
+    if (state === "No timer data" || state === "unknown" || state === "unavailable") {
+      return;
+    }
 
-    if (
-      slotEntity &&
-      entity.state !== "No timer data" &&
-      entity.state !== "unknown"
-    ) {
-      const slotIndex = parseInt(slotEntity.state, 10);
-      if (!isNaN(slotIndex)) {
-        // Parse the summary string to extract timer data
-        const timer = this._parseTimerSummary(entity.state, slotIndex);
-        if (timer) {
-          this._timers = new Map(this._timers);
-          this._timers.set(slotIndex, timer);
-        }
-      }
+    // Parse slot index from the summary string itself (more reliable than separate entity)
+    const slotMatch = state.match(/^Slot (\d+):/);
+    if (!slotMatch) return;
+
+    const slotIndex = parseInt(slotMatch[1], 10);
+    const timer = this._parseTimerSummary(state, slotIndex);
+    if (timer) {
+      this._timers = new Map(this._timers);
+      this._timers.set(slotIndex, timer);
     }
   }
 
