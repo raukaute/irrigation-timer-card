@@ -3,15 +3,13 @@ views:
   - title: S 809
     path: s-809
     type: sections
-    max_columns: 2
+    max_columns: 3
     sections:
-      # --- Controls ---
+      # --- Controls + Battery (side by side) ---
       - type: grid
         cards:
-          - type: heading
-            heading: Controls
-            heading_style: title
           - type: entities
+            title: Controls
             show_header_toggle: false
             entities:
               - entity: switch.s_809_valve
@@ -22,13 +20,9 @@ views:
                 name: Duration (s)
               - entity: number.s_809_rain_snow_delay
                 name: Rain/Snow Delay
-
-      # --- Battery gauge ---
-      - type: grid
-        cards:
-          - type: heading
-            heading: Battery
-            heading_style: title
+            layout_options:
+              grid_columns: 4
+              grid_rows: auto
           - type: gauge
             entity: sensor.s_809_battery_level
             name: Battery
@@ -38,14 +32,15 @@ views:
               green: 50
               yellow: 20
               red: 0
+            layout_options:
+              grid_columns: 4
+              grid_rows: auto
 
-      # --- Last watering ---
+      # --- Last Watering + Timers ---
       - type: grid
         cards:
-          - type: heading
-            heading: Last Watering
-            heading_style: title
           - type: entities
+            title: Last Watering
             show_header_toggle: false
             entities:
               - entity: sensor.s_809
@@ -58,40 +53,37 @@ views:
                 name: Cycles
               - entity: sensor.s_809_3
                 name: Mode
-
-      # --- Timers ---
-      - type: grid
-        cards:
-          - type: heading
-            heading: Timers
-            heading_style: title
+            layout_options:
+              grid_columns: 4
+              grid_rows: auto
           - type: custom:irrigation-timer-card
             entity: sensor.s_809_green_carpet_irrigation_timer_registry
             device_id: bfbc9ae1e1ad6d3135vxmj
             name: Timers
+            layout_options:
+              grid_columns: 4
+              grid_rows: auto
 
-      # --- Watering history ---
+      # --- History graphs ---
       - type: grid
         cards:
-          - type: heading
-            heading: Watering History
-            heading_style: title
           - type: history-graph
+            title: Watering History
             hours_to_show: 168
             entities:
               - entity: switch.s_809_valve
                 name: Valve
               - entity: sensor.s_809_watering_volume
                 name: Volume
-
-      # --- Battery history ---
-      - type: grid
-        cards:
-          - type: heading
-            heading: Battery History
-            heading_style: title
+            layout_options:
+              grid_columns: 4
+              grid_rows: auto
           - type: history-graph
+            title: Battery History
             hours_to_show: 168
             entities:
               - entity: sensor.s_809_battery_level
                 name: Battery
+            layout_options:
+              grid_columns: 4
+              grid_rows: auto
