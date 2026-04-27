@@ -4,9 +4,8 @@ import {
   TimerSlot,
   TimerMode,
   DAYS,
+  NUM_SLOTS,
   IrrigationTimerCardConfig,
-  encodeTimerSlot,
-  encodeTimerDelete,
 } from "./models";
 
 // HA types (minimal)
@@ -22,6 +21,20 @@ interface HomeAssistant {
 interface HassEntity {
   state: string;
   attributes: Record<string, unknown>;
+}
+
+/** Shape of each entry in the registry sensor's `slots` attribute. */
+interface SlotAttribute {
+  slot: number;
+  hour: number;
+  minute: number;
+  mode: "duration" | "volume";
+  value: number;
+  value_unit: "s" | "L";
+  days: string[];
+  days_mask: number;
+  enabled: boolean;
+  cloud_timer_id?: string;
 }
 
 @customElement("irrigation-timer-card")
@@ -40,7 +53,10 @@ export class IrrigationTimerCard extends LitElement {
 
   setConfig(config: IrrigationTimerCardConfig): void {
     if (!config.entity) {
-      throw new Error("Please define an entity");
+      throw new Error("Please define an entity (timer registry sensor)");
+    }
+    if (!config.device_id) {
+      throw new Error("Please define a device_id");
     }
     this._config = config;
   }
@@ -59,61 +75,30 @@ export class IrrigationTimerCard extends LitElement {
     const entity = this.hass.states[this._config.entity];
     if (!entity) return;
 
-    const state = entity.state;
-    if (state === "No timer data" || state === "unknown" || state === "unavailable") {
-      return;
+    const slots = entity.attributes?.slots as
+      | Record<string, SlotAttribute | null>
+      | undefined;
+    if (!slots) return;
+
+    const next = new Map<number, TimerSlot>();
+    for (let i = 0; i < NUM_SLOTS; i++) {
+      const raw = slots[String(i)];
+      if (!raw) continue;
+      next.set(i, {
+        slot: i,
+        mode: raw.mode === "volume" ? TimerMode.Volume : TimerMode.Duration,
+        value: raw.value,
+        hour: raw.hour,
+        minute: raw.minute,
+        daysMask: raw.days_mask,
+        enabled: raw.enabled,
+      });
     }
-
-    // Parse slot index from the summary string itself (more reliable than separate entity)
-    const slotMatch = state.match(/^Slot (\d+):/);
-    if (!slotMatch) return;
-
-    const slotIndex = parseInt(slotMatch[1], 10);
-    const timer = this._parseTimerSummary(state, slotIndex);
-    if (timer) {
-      this._timers = new Map(this._timers);
-      this._timers.set(slotIndex, timer);
-    }
-  }
-
-  private _parseTimerSummary(
-    summary: string,
-    slot: number
-  ): TimerSlot | null {
-    // "Slot 0: 08:30 20min Tue,Fri [ON]"
-    // "Slot 1: 07:00 50L Wed [ON]"
-    const match = summary.match(
-      /Slot \d+: (\d{2}):(\d{2}) (\d+)(min|L) ([A-Za-z,]+) \[(ON|OFF)\]/
-    );
-    if (!match) return null;
-
-    const hour = parseInt(match[1], 10);
-    const minute = parseInt(match[2], 10);
-    const rawValue = parseInt(match[3], 10);
-    const isVolume = match[4] === "L";
-    const daysStr = match[5].split(",");
-    const enabled = match[6] === "ON";
-
-    let daysMask = 0;
-    daysStr.forEach((d) => {
-      const idx = DAYS.indexOf(d as (typeof DAYS)[number]);
-      if (idx >= 0) daysMask |= 1 << idx;
-    });
-
-    return {
-      slot,
-      mode: isVolume ? TimerMode.Volume : TimerMode.Duration,
-      value: isVolume ? rawValue : rawValue * 60, // convert min back to sec
-      hour,
-      minute,
-      daysMask,
-      enabled,
-    };
+    this._timers = next;
   }
 
   private _newTimer(): TimerSlot {
-    // Find first unused slot (0-9)
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < NUM_SLOTS; i++) {
       if (!this._timers.has(i)) {
         return {
           slot: i,
@@ -121,12 +106,11 @@ export class IrrigationTimerCard extends LitElement {
           value: 900, // 15 min default
           hour: 6,
           minute: 0,
-          daysMask: 0b1111111, // all days
+          daysMask: 0b1111111,
           enabled: true,
         };
       }
     }
-    // Fallback to slot 0
     return {
       slot: 0,
       mode: TimerMode.Duration,
@@ -138,26 +122,29 @@ export class IrrigationTimerCard extends LitElement {
     };
   }
 
-  /**
-   * Send a timer command to the Tuya device.
-   * Calls script.tuya_set_timer which handles Tuya API auth.
-   * Script must be configured in HA's scripts.yaml.
-   */
-  private async _sendTimerCommand(encoded: string): Promise<void> {
-    await this.hass.callService("script", "turn_on", {
-      entity_id: "script.tuya_set_timer",
-      variables: {
-        device_id: this._config.device_id,
-        code: "time_task",
-        value: encoded,
-      },
+  private async _sendSetTimer(timer: TimerSlot): Promise<void> {
+    await this.hass.callService("xtend_tuya", "fdm5kw_set_timer", {
+      device_id: this._config.device_id,
+      slot: timer.slot,
+      hour: timer.hour,
+      minute: timer.minute,
+      mode: timer.mode === TimerMode.Volume ? "volume" : "duration",
+      value: timer.value,
+      days: timer.daysMask,
+      enabled: timer.enabled,
+    });
+  }
+
+  private async _sendDeleteTimer(slot: number): Promise<void> {
+    await this.hass.callService("xtend_tuya", "fdm5kw_delete_timer", {
+      device_id: this._config.device_id,
+      slot,
     });
   }
 
   private async _saveTimer(): Promise<void> {
     if (!this._editing) return;
-    const encoded = encodeTimerSlot(this._editing);
-    await this._sendTimerCommand(encoded);
+    await this._sendSetTimer(this._editing);
 
     this._timers = new Map(this._timers);
     this._timers.set(this._editing.slot, { ...this._editing });
@@ -166,8 +153,7 @@ export class IrrigationTimerCard extends LitElement {
   }
 
   private async _deleteTimer(slot: number): Promise<void> {
-    const encoded = encodeTimerDelete(slot);
-    await this._sendTimerCommand(encoded);
+    await this._sendDeleteTimer(slot);
 
     this._timers = new Map(this._timers);
     this._timers.delete(slot);
@@ -193,9 +179,12 @@ export class IrrigationTimerCard extends LitElement {
   protected render() {
     if (!this._config || !this.hass) return nothing;
 
+    const stateAttrs = this.hass.states[this._config.entity]?.attributes;
+    const valveName = stateAttrs?.valve_name as string | undefined;
     const name =
       this._config.name ??
-      this.hass.states[this._config.entity]?.attributes?.friendly_name ??
+      valveName ??
+      (stateAttrs?.friendly_name as string | undefined) ??
       "Irrigation Timer";
 
     return html`
@@ -260,8 +249,7 @@ export class IrrigationTimerCard extends LitElement {
   ): Promise<void> {
     const checked = (e.target as HTMLInputElement).checked;
     const updated = { ...timer, enabled: checked };
-    const encoded = encodeTimerSlot(updated);
-    await this._sendTimerCommand(encoded);
+    await this._sendSetTimer(updated);
 
     this._timers = new Map(this._timers);
     this._timers.set(timer.slot, updated);
